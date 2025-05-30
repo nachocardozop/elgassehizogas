@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { ArrowLeft, Clock, MapPin, Share2, Calculator } from "lucide-react"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,59 +10,91 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatearFechaHora, calcularCombustibleRestante } from "@/lib/utils"
 
-// Datos de ejemplo - en una app real, esto vendría de una base de datos
-const obtenerEstacionPorId = (id) => {
-  return {
-    id: "1",
-    nombre: "Estación YPFB Santa Cruz Centro",
-    direccion: "Av. Cristo Redentor, Santa Cruz de la Sierra",
-    departamento: "Santa Cruz",
-    ciudad: "Santa Cruz de la Sierra",
-    coordenadas: { lat: -17.7833, lng: -63.1821 },
-    telefono: "+591 33312345",
-    ultimaActualizacion: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
-    actualizacionesCombustible: [
-      {
-        id: "gas1",
-        tipoCombustible: "Gasolina",
-        cantidad: 4500,
-        horaInicio: new Date(Date.now() + 1000 * 60 * 25).toISOString(),
-        estado: "proximo",
-        ultimaActualizacion: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
-        tiempoPromedioAtencion: 2, // minutos por vehículo
-      },
-      {
-        id: "diesel1",
-        tipoCombustible: "Diesel",
-        cantidad: 0,
-        horaInicio: new Date(Date.now() - 1000 * 60 * 180).toISOString(),
-        estado: "vacio",
-        ultimaActualizacion: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-        tiempoPromedioAtencion: 3, // minutos por vehículo
-      },
-    ],
-  }
-}
-
 export default function PaginaDetalleEstacion({ params }) {
-  const estacion = obtenerEstacionPorId(params.id)
+  const [estacion, setEstacion] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [autosDelante, setAutosDelante] = useState(0)
-  const [combustibleSeleccionado, setCombustibleSeleccionado] = useState(estacion.actualizacionesCombustible[0].id)
+  const [combustibleSeleccionado, setCombustibleSeleccionado] = useState(null)
 
-  const actualizacionSeleccionada = estacion.actualizacionesCombustible.find(
-    (act) => act.id === combustibleSeleccionado,
-  )
+  useEffect(() => {
+    fetchEstacion()
+  }, [params.id])
+
+    const fetchEstacion = async () => {
+      try {
+        const response = await fetch(`/api/public/stations/${params.id}`)
+        if (response.ok) {
+          const data = await response.json()
+          setEstacion(data)
+          if (data.fuel_records?.length > 0) {
+            setCombustibleSeleccionado(data.fuel_records[0].id)
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching station:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Cargando estación...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!estacion) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold mb-2">Estación no encontrada</h2>
+          <Link href="/">
+            <Button>Volver al inicio</Button>
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  const actualizacionSeleccionada =
+    estacion.fuel_records?.find((record) => record.id === combustibleSeleccionado) || estacion.fuel_records?.[0]
+
+  if (!actualizacionSeleccionada) {
+    return (
+      <div className="min-h-screen bg-background">
+        <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
+          <div className="container flex h-14 items-center justify-between py-2 px-4">
+            <Link href="/" className="flex items-center text-sm text-muted-foreground hover:text-foreground">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Volver
+            </Link>
+          </div>
+        </header>
+        <main className="container py-4 px-4">
+          <div className="text-center py-12">
+            <h2 className="text-xl font-bold mb-2">{estacion.name}</h2>
+            <p className="text-muted-foreground">Sin información de combustible disponible</p>
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   // Calcular si hay suficiente combustible para los autos delante
   const litrosNecesarios = autosDelante * 35
-  const haySuficiente = actualizacionSeleccionada.cantidad >= litrosNecesarios
-  const combustibleRestante = calcularCombustibleRestante(actualizacionSeleccionada.cantidad, autosDelante)
-  const tiempoEspera = autosDelante * actualizacionSeleccionada.tiempoPromedioAtencion
+  const haySuficiente = actualizacionSeleccionada.quantity >= litrosNecesarios
+  const combustibleRestante = calcularCombustibleRestante(actualizacionSeleccionada.quantity, autosDelante)
+  const tiempoEspera = autosDelante * 2 // 2 minutos por vehículo promedio
 
   // Determinar recomendación
   let recomendacion = ""
   let colorRecomendacion = ""
-  if (actualizacionSeleccionada.estado === "vacio") {
+  if (actualizacionSeleccionada.status === "empty") {
     recomendacion = "Esta estación no tiene combustible. Busca otra estación."
     colorRecomendacion = "bg-red-50 text-red-800 border-red-200"
   } else if (!haySuficiente) {
@@ -99,11 +131,11 @@ export default function PaginaDetalleEstacion({ params }) {
       <main className="container py-4 px-4 space-y-4">
         {/* Información de la estación */}
         <div className="space-y-2">
-          <h1 className="text-xl font-bold leading-tight">{estacion.nombre}</h1>
+          <h1 className="text-xl font-bold leading-tight">{estacion.name}</h1>
           <div className="flex items-center text-muted-foreground text-sm">
             <MapPin className="h-4 w-4 mr-1 flex-shrink-0" />
             <span>
-              {estacion.ciudad}, {estacion.departamento}
+              {estacion.city}, {estacion.department}
             </span>
           </div>
         </div>
@@ -158,32 +190,24 @@ export default function PaginaDetalleEstacion({ params }) {
             <CardTitle className="text-lg">Disponibilidad de Combustible</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {estacion.actualizacionesCombustible.map((actualizacion) => (
+            {estacion.fuel_records.map((record) => (
               <div
-                key={actualizacion.id}
+                key={record.id}
                 className={`border rounded-lg p-3 ${
-                  actualizacion.id === combustibleSeleccionado ? "border-primary bg-primary/5" : ""
+                  record.id === combustibleSeleccionado ? "border-primary bg-primary/5" : ""
                 }`}
-                onClick={() => setCombustibleSeleccionado(actualizacion.id)}
+                onClick={() => setCombustibleSeleccionado(record.id)}
                 style={{ cursor: "pointer" }}
               >
                 <div className="flex justify-between items-start mb-2">
-                  <div className="font-medium">{actualizacion.tipoCombustible}</div>
+                  <div className="font-medium">{record.fuel_type}</div>
                   <Badge
                     variant={
-                      actualizacion.estado === "vacio"
-                        ? "destructive"
-                        : actualizacion.estado === "vendiendo"
-                          ? "success"
-                          : "outline"
+                      record.status === "empty" ? "destructive" : record.status === "selling" ? "success" : "outline"
                     }
                     className="text-xs"
                   >
-                    {actualizacion.estado === "vacio"
-                      ? "Vacío"
-                      : actualizacion.estado === "vendiendo"
-                        ? "Vendiendo"
-                        : "Próximamente"}
+                    {record.status === "empty" ? "Vacío" : record.status === "selling" ? "Vendiendo" : "Próximamente"}
                   </Badge>
                 </div>
 
@@ -191,9 +215,9 @@ export default function PaginaDetalleEstacion({ params }) {
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Disponible:</span>
                     <span className="font-medium">
-                      {actualizacion.cantidad > 0 ? (
+                      {record.quantity > 0 ? (
                         <>
-                          {actualizacion.cantidad}L (~{Math.floor(actualizacion.cantidad / 35)} autos)
+                          {record.quantity}L (~{Math.floor(record.quantity / 35)} autos)
                         </>
                       ) : (
                         "Sin combustible"
@@ -203,11 +227,11 @@ export default function PaginaDetalleEstacion({ params }) {
 
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
-                      {actualizacion.estado === "proximo" ? "Inicia:" : "Iniciado:"}
+                      {record.status === "upcoming" ? "Inicia:" : "Iniciado:"}
                     </span>
                     <span className="font-medium flex items-center">
                       <Clock className="h-3 w-3 mr-1" />
-                      {formatearFechaHora(actualizacion.horaInicio)}
+                      {formatearFechaHora(record.start_time)}
                     </span>
                   </div>
                 </div>
@@ -223,10 +247,12 @@ export default function PaginaDetalleEstacion({ params }) {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Teléfono:</span>
-                <span className="font-medium">{estacion.telefono}</span>
-              </div>
+              {estacion.phone && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Teléfono:</span>
+                  <span className="font-medium">{estacion.phone}</span>
+                </div>
+              )}
 
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Horario:</span>
@@ -235,7 +261,7 @@ export default function PaginaDetalleEstacion({ params }) {
 
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Última actualización:</span>
-                <span className="font-medium">{formatearFechaHora(estacion.ultimaActualizacion)}</span>
+                <span className="font-medium">{formatearFechaHora(estacion.updated_at)}</span>
               </div>
             </div>
 

@@ -1,43 +1,44 @@
+"use client"
+
 import { Fuel } from "lucide-react"
 import Link from "next/link"
-import { PanelAdministrador } from "@/components/panel-administrador"
 import { Button } from "@/components/ui/button"
+import { AdminDashboard } from "@/components/admin/admin-dashboard"
+import { UserButton } from "@clerk/nextjs"
 
-export default function PaginaAdmin() {
+export default function AdminPage() {
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <div className="min-h-screen bg-background">
+      <header className="border-b">
         <div className="container flex h-16 items-center justify-between py-4">
           <div className="flex items-center gap-2">
             <Fuel className="h-6 w-6 text-red-600" />
             <Link href="/">
-              <h1 className="text-xl font-bold">BuscaCombustible Bolivia</h1>
+              <h1 className="text-xl font-bold">El gas se hizo gas - Admin</h1>
             </Link>
           </div>
           <nav className="flex items-center gap-4">
             <Link href="/">
-              <Button variant="outline">Vista Pública</Button>
+              <Button variant="outline">Ver Sitio Público</Button>
             </Link>
-            <Link href="/dashboard">
-              <Button variant="outline">Panel de Estación</Button>
-            </Link>
+            <UserButton />
           </nav>
         </div>
       </header>
-      <main className="flex-1 container py-6">
+
+      <main className="container py-6">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Panel de Administrador</h1>
-          <p className="text-muted-foreground">
-            Gestiona múltiples estaciones y actualiza la disponibilidad de combustible de forma masiva.
-          </p>
+          <h1 className="text-3xl font-bold mb-2">Panel de Administración</h1>
+          <p className="text-muted-foreground">Gestiona estaciones de servicio y registros de combustible</p>
         </div>
 
-        <PanelAdministrador />
+        <AdminDashboard />
       </main>
+
       <footer className="border-t py-6">
         <div className="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row md:py-0">
           <p className="text-center text-sm leading-loose text-muted-foreground md:text-left">
-            BuscaCombustible Bolivia - Ayudando a las comunidades durante la crisis de escasez de combustible
+            El gas se hizo gas - Panel de administración para gestión de combustible
           </p>
         </div>
       </footer>
