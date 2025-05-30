@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Clock, Droplet, MapPin, Search, Filter } from "lucide-react"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,93 +11,41 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { formatearFechaHora } from "@/lib/utils"
 
-// Mock data for preview - in real app this would come from API
-const mockEstaciones = [
-  {
-    id: "1",
-    name: "Estación YPFB Santa Cruz Centro",
-    address: "Av. Cristo Redentor, Santa Cruz de la Sierra",
-    department: "Santa Cruz",
-    city: "Santa Cruz de la Sierra",
-    phone: "+591 33312345",
-    updated_at: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
-    fuel_records: [
-      {
-        id: "fuel1",
-        fuel_type: "Gasolina",
-        quantity: 4500,
-        start_time: new Date(Date.now() + 1000 * 60 * 25).toISOString(),
-        status: "upcoming",
-        created_at: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
-      },
-    ],
-  },
-  {
-    id: "2",
-    name: "Estación El Alto Norte",
-    address: "Av. 6 de Marzo, El Alto",
-    department: "La Paz",
-    city: "El Alto",
-    phone: "+591 22334455",
-    updated_at: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-    fuel_records: [
-      {
-        id: "fuel2",
-        fuel_type: "Gasolina",
-        quantity: 3200,
-        start_time: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-        status: "selling",
-        created_at: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-      },
-    ],
-  },
-  {
-    id: "3",
-    name: "Estación YPFB Central La Paz",
-    address: "Av. 16 de Julio, La Paz",
-    department: "La Paz",
-    city: "La Paz",
-    phone: "+591 22556677",
-    updated_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    fuel_records: [
-      {
-        id: "fuel3",
-        fuel_type: "Gasolina",
-        quantity: 5000,
-        start_time: new Date(Date.now() + 1000 * 60 * 15).toISOString(),
-        status: "upcoming",
-        created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-      },
-    ],
-  },
-  {
-    id: "4",
-    name: "Estación La Guardia",
-    address: "Carretera a Cochabamba, La Guardia",
-    department: "Santa Cruz",
-    city: "La Guardia",
-    phone: "+591 33778899",
-    updated_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    fuel_records: [
-      {
-        id: "fuel4",
-        fuel_type: "Gasolina",
-        quantity: 0,
-        start_time: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-        status: "empty",
-        created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-      },
-    ],
-  },
-]
-
 export function ListaEstacionesPublica() {
-  const [estaciones] = useState(mockEstaciones)
-  const [loading] = useState(false)
+  const [estaciones, setEstaciones] = useState([])
+  const [loading, setLoading] = useState(true)
   const [busqueda, setBusqueda] = useState("")
   const [departamentoSeleccionado, setDepartamentoSeleccionado] = useState("todos")
   const [ciudadSeleccionada, setCiudadSeleccionada] = useState("todas")
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false)
+
+  // Fetch real data from API
+  useEffect(() => {
+    const fetchEstaciones = async () => {
+      try {
+        const response = await fetch('/api/public/stations')
+        if (response.ok) {
+          const data = await response.json()
+          // Transform the data to match expected format
+          const transformedData = data.map(station => ({
+            ...station,
+            fuel_records: station.fuel_records || []
+          }))
+          setEstaciones(transformedData)
+        } else {
+          console.error('Error fetching stations:', response.status)
+          setEstaciones([])
+        }
+      } catch (error) {
+        console.error('Error fetching stations:', error)
+        setEstaciones([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchEstaciones()
+  }, [])
 
   // Obtener departamentos únicos
   const departamentos = [...new Set(estaciones.map((estacion) => estacion.department))].sort()
@@ -263,7 +211,7 @@ export function ListaEstacionesPublica() {
                         latestFuel.status === "empty"
                           ? "destructive"
                           : latestFuel.status === "selling"
-                            ? "success"
+                            ? "default"
                             : "outline"
                       }
                       className="text-xs px-2 py-1 flex-shrink-0"
@@ -289,9 +237,9 @@ export function ListaEstacionesPublica() {
                       <span className="text-sm font-medium">
                         {latestFuel.quantity > 0 ? (
                           <>
-                            {latestFuel.quantity}L
+                            {latestFuel.quantity.toLocaleString()}L
                             <span className="text-xs text-muted-foreground ml-1">
-                              (~{Math.floor(latestFuel.quantity / 35)})
+                              (~{Math.floor(latestFuel.quantity / 35)} vehículos)
                             </span>
                           </>
                         ) : (
@@ -328,7 +276,11 @@ export function ListaEstacionesPublica() {
           <div className="text-center py-12">
             <Droplet className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium">No se encontraron estaciones</h3>
-            <p className="text-muted-foreground mt-2">Intenta ajustar tus criterios de búsqueda</p>
+            <p className="text-muted-foreground mt-2">
+              {estaciones.length === 0 
+                ? "No hay estaciones registradas aún" 
+                : "Intenta ajustar tus criterios de búsqueda"}
+            </p>
           </div>
         )}
       </div>

@@ -20,22 +20,22 @@ export default function PaginaDetalleEstacion({ params }) {
     fetchEstacion()
   }, [params.id])
 
-  const fetchEstacion = async () => {
-    try {
-      const response = await fetch(`/api/stations/${params.id}/public`)
-      if (response.ok) {
-        const data = await response.json()
-        setEstacion(data)
-        if (data.fuel_records?.length > 0) {
-          setCombustibleSeleccionado(data.fuel_records[0].id)
+    const fetchEstacion = async () => {
+      try {
+        const response = await fetch(`/api/public/stations/${params.id}`)
+        if (response.ok) {
+          const data = await response.json()
+          setEstacion(data)
+          if (data.fuel_records?.length > 0) {
+            setCombustibleSeleccionado(data.fuel_records[0].id)
+          }
         }
+      } catch (error) {
+        console.error("Error fetching station:", error)
+      } finally {
+        setLoading(false)
       }
-    } catch (error) {
-      console.error("Error fetching station:", error)
-    } finally {
-      setLoading(false)
     }
-  }
 
   if (loading) {
     return (
