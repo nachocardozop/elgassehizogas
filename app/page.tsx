@@ -1,6 +1,6 @@
-import { Fuel, MapPin } from "lucide-react"
+import { Fuel, MapPin, Shield } from "lucide-react"
 import Link from "next/link"
-import { ListaEstaciones } from "@/components/lista-estaciones"
+import { ListaEstacionesPublica } from "@/components/public/lista-estaciones-publica"
 import { Button } from "@/components/ui/button"
 
 export default function Home() {
@@ -19,13 +19,19 @@ export default function Home() {
                 Mapa
               </Button>
             </Link>
+            <Link href="/admin">
+              <Button variant="outline" size="sm" className="text-xs px-3 py-2">
+                <Shield className="mr-1 h-3 w-3" />
+                Admin
+              </Button>
+            </Link>
           </nav>
         </div>
       </header>
       <main className="flex-1 container py-4 px-4">
         <section>
           <h2 className="text-xl font-bold mb-4">Estaciones de Servicio</h2>
-          <ListaEstaciones />
+          <ListaEstacionesPublica />
         </section>
       </main>
       <footer className="border-t py-4">
