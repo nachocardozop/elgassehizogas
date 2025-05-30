@@ -89,6 +89,12 @@ export function AdminDashboard() {
                 Nueva Estación
               </Button>
             </Link>
+            <Link href="/admin/stations/batch">
+              <Button variant="outline" className="w-full">
+                <Upload className="mr-2 h-4 w-4" />
+                Carga Masiva (CSV)
+              </Button>
+            </Link>
           </CardContent>
         </Card>
 
