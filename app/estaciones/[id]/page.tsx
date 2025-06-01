@@ -1,41 +1,98 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ArrowLeft, Clock, MapPin, Share2, Calculator } from "lucide-react"
+import {
+  ArrowLeft,
+  Clock,
+  MapPin,
+  Share2,
+  Calculator,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Users,
+  MapIcon,
+} from "lucide-react"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { formatearFechaHora, calcularCombustibleRestante } from "@/lib/utils"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { formatearFechaHora } from "@/lib/utils"
+
+// Funciones de cálculo reutilizadas
+const calcularCombustibleRestante = (fuelRecord) => {
+  if (!fuelRecord || fuelRecord.status === "empty") return 0
+
+  const ahora = new Date()
+  const inicioVenta = new Date(fuelRecord.start_time)
+
+  if (ahora < inicioVenta) return fuelRecord.quantity
+
+  const minutosTranscurridos = Math.floor((ahora - inicioVenta) / (1000 * 60))
+  const autosAtendidos = Math.floor(minutosTranscurridos / 2)
+  const litrosVendidos = autosAtendidos * 35
+
+  return Math.max(0, fuelRecord.quantity - litrosVendidos)
+}
+
+const calcularTiempoRestante = (fuelRecord) => {
+  if (!fuelRecord || fuelRecord.status === "empty") return { horas: 0, minutos: 0, horaFin: null }
+
+  const combustibleRestante = calcularCombustibleRestante(fuelRecord)
+  const autosRestantes = Math.floor(combustibleRestante / 35)
+  const minutosRestantes = autosRestantes * 2
+
+  const horas = Math.floor(minutosRestantes / 60)
+  const minutos = minutosRestantes % 60
+
+  const ahora = new Date()
+  const horaFin = new Date(ahora.getTime() + minutosRestantes * 60000)
+
+  return { horas, minutos, horaFin }
+}
 
 export default function PaginaDetalleEstacion({ params }) {
   const [estacion, setEstacion] = useState(null)
   const [loading, setLoading] = useState(true)
   const [autosDelante, setAutosDelante] = useState(0)
-  const [combustibleSeleccionado, setCombustibleSeleccionado] = useState(null)
+  const [cuadrasDelante, setCuadrasDelante] = useState(0)
+  const [tipoDistancia, setTipoDistancia] = useState("autos")
+  const [tiempoActual, setTiempoActual] = useState(new Date())
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTiempoActual(new Date())
+    }, 60000)
+
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     fetchEstacion()
   }, [params.id])
 
-    const fetchEstacion = async () => {
-      try {
-        const response = await fetch(`/api/public/stations/${params.id}`)
-        if (response.ok) {
-          const data = await response.json()
-          setEstacion(data)
-          if (data.fuel_records?.length > 0) {
-            setCombustibleSeleccionado(data.fuel_records[0].id)
-          }
+  const fetchEstacion = async () => {
+    try {
+      const response = await fetch(`/api/public/stations/${params.id}`)
+      if (response.ok) {
+        const data = await response.json()
+        console.log("Estación cargada:", data) // Para depuración
+
+        // Asegurarse de que fuel_records sea un array
+        if (data) {
+          data.fuel_records = Array.isArray(data.fuel_records) ? data.fuel_records : []
         }
-      } catch (error) {
-        console.error("Error fetching station:", error)
-      } finally {
-        setLoading(false)
+
+        setEstacion(data)
       }
+    } catch (error) {
+      console.error("Error fetching station:", error)
+    } finally {
+      setLoading(false)
     }
+  }
 
   if (loading) {
     return (
@@ -61,10 +118,11 @@ export default function PaginaDetalleEstacion({ params }) {
     )
   }
 
-  const actualizacionSeleccionada =
-    estacion.fuel_records?.find((record) => record.id === combustibleSeleccionado) || estacion.fuel_records?.[0]
+  // Asegurarse de que fuel_records sea un array
+  const fuelRecords = Array.isArray(estacion.fuel_records) ? estacion.fuel_records : []
+  const latestFuel = fuelRecords.length > 0 ? fuelRecords[0] : null
 
-  if (!actualizacionSeleccionada) {
+  if (!latestFuel) {
     return (
       <div className="min-h-screen bg-background">
         <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
@@ -85,34 +143,59 @@ export default function PaginaDetalleEstacion({ params }) {
     )
   }
 
-  // Calcular si hay suficiente combustible para los autos delante
-  const litrosNecesarios = autosDelante * 35
-  const haySuficiente = actualizacionSeleccionada.quantity >= litrosNecesarios
-  const combustibleRestante = calcularCombustibleRestante(actualizacionSeleccionada.quantity, autosDelante)
-  const tiempoEspera = autosDelante * 2 // 2 minutos por vehículo promedio
+  const combustibleRestante = calcularCombustibleRestante(latestFuel)
+  const tiempoRestante = calcularTiempoRestante(latestFuel)
+  const autosIniciales = Math.floor(latestFuel.quantity / 35)
+  const autosRestantes = Math.floor(combustibleRestante / 35)
 
-  // Determinar recomendación
+  // Calcular posición en fila
+  let autosEnFila = autosDelante
+  if (tipoDistancia === "cuadras") {
+    // Estimación: 8 autos por cuadra
+    autosEnFila = cuadrasDelante * 8
+  }
+
+  const litrosNecesarios = autosEnFila * 35
+  const haySuficiente = combustibleRestante >= litrosNecesarios
+  const tiempoEspera = autosEnFila * 2 // 2 minutos por auto
+
+  // Análisis inteligente
   let recomendacion = ""
   let colorRecomendacion = ""
-  if (actualizacionSeleccionada.status === "empty") {
-    recomendacion = "Esta estación no tiene combustible. Busca otra estación."
+  let iconoRecomendacion = null
+
+  if (latestFuel.status === "empty") {
+    recomendacion = "Esta estación no tiene combustible disponible. Te recomendamos buscar otra estación."
     colorRecomendacion = "bg-red-50 text-red-800 border-red-200"
+    iconoRecomendacion = <XCircle className="h-5 w-5 text-red-600" />
+  } else if (latestFuel.status === "upcoming") {
+    const minutosHastaInicio = Math.floor((new Date(latestFuel.start_time) - new Date()) / (1000 * 60))
+    if (minutosHastaInicio > 60) {
+      recomendacion = `La venta comenzará en ${Math.floor(minutosHastaInicio / 60)} horas y ${minutosHastaInicio % 60} minutos. Considera llegar 30-60 minutos antes para asegurar tu lugar.`
+      colorRecomendacion = "bg-blue-50 text-blue-800 border-blue-200"
+      iconoRecomendacion = <Clock className="h-5 w-5 text-blue-600" />
+    } else {
+      recomendacion = `La venta comenzará pronto (${minutosHastaInicio} minutos). Es un buen momento para dirigirte a la estación.`
+      colorRecomendacion = "bg-green-50 text-green-800 border-green-200"
+      iconoRecomendacion = <CheckCircle className="h-5 w-5 text-green-600" />
+    }
   } else if (!haySuficiente) {
-    recomendacion = "No hay suficiente combustible para tu posición en la fila. Busca otra estación."
+    recomendacion =
+      "Basado en tu posición estimada en la fila, es probable que no haya suficiente combustible. Te recomendamos buscar otra estación."
     colorRecomendacion = "bg-red-50 text-red-800 border-red-200"
-  } else if (tiempoEspera > 60) {
-    recomendacion = `El tiempo de espera es largo (${Math.floor(tiempoEspera / 60)} horas y ${
-      tiempoEspera % 60
-    } minutos). Considera buscar otra estación.`
+    iconoRecomendacion = <XCircle className="h-5 w-5 text-red-600" />
+  } else if (tiempoEspera > 120) {
+    recomendacion = `El tiempo de espera estimado es largo (${Math.floor(tiempoEspera / 60)} horas). Hay combustible suficiente, pero considera si vale la pena la espera.`
     colorRecomendacion = "bg-yellow-50 text-yellow-800 border-yellow-200"
+    iconoRecomendacion = <AlertTriangle className="h-5 w-5 text-yellow-600" />
   } else {
-    recomendacion = `Hay suficiente combustible para tu posición. Tiempo estimado de espera: ${tiempoEspera} minutos.`
+    recomendacion = `¡Buenas noticias! Hay suficiente combustible para tu posición. Tiempo estimado de espera: ${Math.floor(tiempoEspera / 60)}h ${tiempoEspera % 60}m.`
     colorRecomendacion = "bg-green-50 text-green-800 border-green-200"
+    iconoRecomendacion = <CheckCircle className="h-5 w-5 text-green-600" />
   }
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header optimizado para móvil */}
       <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
         <div className="container flex h-14 items-center justify-between py-2 px-4">
           <Link href="/" className="flex items-center text-sm text-muted-foreground hover:text-foreground">
@@ -135,114 +218,154 @@ export default function PaginaDetalleEstacion({ params }) {
           <div className="flex items-center text-muted-foreground text-sm">
             <MapPin className="h-4 w-4 mr-1 flex-shrink-0" />
             <span>
-              {estacion.city}, {estacion.department}
+              {estacion.city || "Sin ciudad"}, {estacion.department || "Sin departamento"}
             </span>
           </div>
         </div>
 
-        {/* Calculadora de posición - Destacada en móvil */}
-        <Card className="border-primary/20 bg-primary/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center">
-              <Calculator className="h-5 w-5 mr-2" />
-              Estima tus Posibilidades
-            </CardTitle>
-            <CardDescription>Calcula si habrá suficiente combustible para tu posición</CardDescription>
+        {/* Resumen de información de la tarjeta */}
+        <Card className="border-l-4 border-l-primary">
+          <CardHeader>
+            <CardTitle className="text-lg">Resumen de Disponibilidad</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="autos-delante" className="text-base font-medium">
-                ¿Cuántos autos tienes delante?
-              </Label>
-              <Input
-                id="autos-delante"
-                type="number"
-                min="0"
-                value={autosDelante}
-                onChange={(e) => setAutosDelante(Number.parseInt(e.target.value) || 0)}
-                className="h-12 text-lg text-center"
-                placeholder="0"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-blue-50 rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-blue-900">{latestFuel.quantity.toLocaleString()}L</div>
+                <div className="text-xs text-blue-700">Combustible inicial</div>
+              </div>
+              <div className="bg-green-50 rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-green-900">{combustibleRestante.toLocaleString()}L</div>
+                <div className="text-xs text-green-700">Restante ahora</div>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="border rounded-lg p-3 text-center bg-background">
-                <div className="text-xl font-bold mb-1">{haySuficiente ? combustibleRestante : 0}</div>
-                <div className="text-xs text-muted-foreground">Litros restantes</div>
+              <div className="bg-orange-50 rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-orange-900">
+                  {tiempoRestante.horas}h {tiempoRestante.minutos}m
+                </div>
+                <div className="text-xs text-orange-700">Tiempo restante</div>
               </div>
-
-              <div className="border rounded-lg p-3 text-center bg-background">
-                <div className="text-xl font-bold mb-1">{tiempoEspera} min</div>
-                <div className="text-xs text-muted-foreground">Tiempo estimado</div>
+              <div className="bg-purple-50 rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-purple-900">
+                  {tiempoRestante.horaFin
+                    ? tiempoRestante.horaFin.toLocaleTimeString("es-ES", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "--:--"}
+                </div>
+                <div className="text-xs text-purple-700">Hora estimada fin</div>
               </div>
-            </div>
-
-            <div className={`p-3 rounded-lg text-sm border ${colorRecomendacion}`}>
-              <p className="font-medium mb-1">Recomendación:</p>
-              <p>{recomendacion}</p>
             </div>
           </CardContent>
         </Card>
 
-        {/* Disponibilidad de combustible */}
+        {/* Análisis inteligente */}
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Disponibilidad de Combustible</CardTitle>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Calculator className="h-5 w-5" />
+              Análisis Inteligente
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {estacion.fuel_records.map((record) => (
-              <div
-                key={record.id}
-                className={`border rounded-lg p-3 ${
-                  record.id === combustibleSeleccionado ? "border-primary bg-primary/5" : ""
-                }`}
-                onClick={() => setCombustibleSeleccionado(record.id)}
-                style={{ cursor: "pointer" }}
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <div className="font-medium">{record.fuel_type}</div>
-                  <Badge
-                    variant={
-                      record.status === "empty" ? "destructive" : record.status === "selling" ? "success" : "outline"
-                    }
-                    className="text-xs"
-                  >
-                    {record.status === "empty" ? "Vacío" : record.status === "selling" ? "Vendiendo" : "Próximamente"}
-                  </Badge>
-                </div>
-
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Disponible:</span>
-                    <span className="font-medium">
-                      {record.quantity > 0 ? (
-                        <>
-                          {record.quantity}L (~{Math.floor(record.quantity / 35)} autos)
-                        </>
-                      ) : (
-                        "Sin combustible"
-                      )}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">
-                      {record.status === "upcoming" ? "Inicia:" : "Iniciado:"}
-                    </span>
-                    <span className="font-medium flex items-center">
-                      <Clock className="h-3 w-3 mr-1" />
-                      {formatearFechaHora(record.start_time)}
-                    </span>
-                  </div>
-                </div>
+          <CardContent>
+            <div className={`p-4 rounded-lg border flex items-start gap-3 ${colorRecomendacion}`}>
+              {iconoRecomendacion}
+              <div>
+                <h4 className="font-medium mb-1">Recomendación:</h4>
+                <p className="text-sm">{recomendacion}</p>
               </div>
-            ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Calculadora mejorada */}
+        <Card className="border-primary/20 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              ¿Ya estás en la fila?
+            </CardTitle>
+            <CardDescription>
+              Si ya estás haciendo fila, ingresa tu posición para un cálculo más preciso
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-3">
+              <Label className="text-base font-medium">¿Cómo quieres medir tu posición?</Label>
+              <Select value={tipoDistancia} onValueChange={setTipoDistancia}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="autos">Número de autos delante</SelectItem>
+                  <SelectItem value="cuadras">Número de cuadras de distancia</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {tipoDistancia === "autos" ? (
+              <div className="space-y-2">
+                <Label htmlFor="autos-delante" className="text-base font-medium">
+                  ¿Cuántos autos tienes delante?
+                </Label>
+                <Input
+                  id="autos-delante"
+                  type="number"
+                  min="0"
+                  value={autosDelante}
+                  onChange={(e) => setAutosDelante(Number.parseInt(e.target.value) || 0)}
+                  className="h-12 text-lg text-center"
+                  placeholder="0"
+                />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="cuadras-delante" className="text-base font-medium">
+                  ¿A cuántas cuadras estás de la estación?
+                </Label>
+                <Input
+                  id="cuadras-delante"
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={cuadrasDelante}
+                  onChange={(e) => setCuadrasDelante(Number.parseFloat(e.target.value) || 0)}
+                  className="h-12 text-lg text-center"
+                  placeholder="0"
+                />
+                <p className="text-xs text-muted-foreground">Estimamos ~8 autos por cuadra</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="border rounded-lg p-3 text-center bg-background">
+                <div className="text-xl font-bold mb-1">
+                  {haySuficiente ? (combustibleRestante - litrosNecesarios).toLocaleString() : 0}L
+                </div>
+                <div className="text-xs text-muted-foreground">Litros restantes después</div>
+              </div>
+
+              <div className="border rounded-lg p-3 text-center bg-background">
+                <div className="text-xl font-bold mb-1">
+                  {Math.floor(tiempoEspera / 60)}h {tiempoEspera % 60}m
+                </div>
+                <div className="text-xs text-muted-foreground">Tiempo estimado</div>
+              </div>
+            </div>
+
+            <div className="text-center text-sm text-muted-foreground">
+              <p>Posición estimada: {autosEnFila} autos delante</p>
+              <p>Combustible necesario: {litrosNecesarios.toLocaleString()}L</p>
+            </div>
           </CardContent>
         </Card>
 
         {/* Información de contacto */}
         <Card>
-          <CardHeader className="pb-3">
+          <CardHeader>
             <CardTitle className="text-lg">Información de Contacto</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -266,7 +389,7 @@ export default function PaginaDetalleEstacion({ params }) {
             </div>
 
             <Button className="w-full h-12 mt-4">
-              <MapPin className="h-4 w-4 mr-2" />
+              <MapIcon className="h-4 w-4 mr-2" />
               Obtener Direcciones
             </Button>
           </CardContent>
